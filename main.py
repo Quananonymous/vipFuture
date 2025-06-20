@@ -557,11 +557,11 @@ def load_config_from_env():
     manager = BotManager()
     
     # Đọc cấu hình từ biến môi trường
-    symbols = os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT").split(",")
+    symbols = os.getenv("SYMBOLS", "XRPUSDT,DOGEUSDT").split(",")
     lev = int(os.getenv("LEVERAGE", 50))
-    percent = float(os.getenv("PERCENT", 5.0))
-    tp = float(os.getenv("TAKE_PROFIT", 10.0))
-    sl = float(os.getenv("STOP_LOSS", 5.0))
+    percent = float(os.getenv("PERCENT", 20))
+    tp = float(os.getenv("TAKE_PROFIT", 20.0))
+    sl = float(os.getenv("STOP_LOSS", 50.0))
     indicator = os.getenv("INDICATOR", "RSI")
     
     for symbol in symbols:
