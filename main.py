@@ -17,6 +17,8 @@ from config import BINANCE_API_KEY, BINANCE_SECRET_KEY
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
+API_KEY = BINANCE_API_KEY
+API_SECRET = BINANCE_SECRET_KEY
 # Lấy API key từ biến môi trường
 # ========== HÀM HỖ TRỢ API ==========
 def sign(query):
