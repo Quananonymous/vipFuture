@@ -264,7 +264,7 @@ class IndicatorBot:
         self.sl = sl
         self.indicator = indicator
         self.ws_manager = ws_manager
-        self.status = "waiting"
+        self.status = "waiting"  # waiting, open, cooldown
         self.side = ""
         self.qty = 0
         self.entry = 0
@@ -275,8 +275,9 @@ class IndicatorBot:
         self.position_check_interval = 60
         self.last_position_check = 0
         self.last_error_log_time = 0
-        self.cooldown_period = 300  # Thời gian chờ sau khi đóng vị thế (5 phút)
+        self.cooldown_period = 30  # Thời gian chờ sau khi đóng vị thế (5 phút)
         self.last_close_time = 0  # Thời điểm đóng vị thế gần nhất
+        self.position_verified = False  # Xác nhận vị thế đã đóng
         
         self.ws_manager.add_symbol(self.symbol, self._handle_price_update)
         
@@ -301,25 +302,33 @@ class IndicatorBot:
             try:
                 current_time = time.time()
                 
+                # Kiểm tra trạng thái vị thế định kỳ
                 if current_time - self.last_position_check > self.position_check_interval:
                     self.check_position_status()
                     self.last_position_check = current_time
                 
-                if not self.position_open and self.status == "waiting":
-                    # Kiểm tra thời gian chờ sau khi đóng vị thế
-                    if current_time - self.last_close_time < self.cooldown_period:
-                        # Vẫn trong thời gian chờ
-                        wait_time = self.cooldown_period - (current_time - self.last_close_time)
-                        self.log(f"⏳ {self.symbol} đang chờ ({int(wait_time)}s) trước khi mở vị thế mới")
-                        time.sleep(5)
-                        continue
+                # Chỉ xử lý nếu không có vị thế mở
+                if not self.position_open:
+                    # Nếu đang trong thời gian chờ
+                    if self.status == "cooldown":
+                        # Kiểm tra xem đã hết thời gian chờ chưa
+                        if current_time - self.last_close_time >= self.cooldown_period:
+                            self.status = "waiting"
+                            self.log(f"⏳ {self.symbol} kết thúc thời gian chờ, sẵn sàng mở lệnh mới")
+                        else:
+                            wait_time = self.cooldown_period - (current_time - self.last_close_time)
+                            if int(wait_time) % 30 == 0:  # Log mỗi 30 giây
+                                self.log(f"⏳ {self.symbol} đang chờ ({int(wait_time)}s) trước khi mở lệnh mới")
                     
-                    signal = self.get_signal()
-                    
-                    if signal and current_time - self.last_trade_time > 60:
-                        self.open_position(signal)
-                        self.last_trade_time = current_time
+                    # Nếu đang chờ mở lệnh
+                    if self.status == "waiting":
+                        signal = self.get_signal()
+                        
+                        if signal and current_time - self.last_trade_time > 60:
+                            self.open_position(signal)
+                            self.last_trade_time = current_time
                 
+                # Kiểm tra TP/SL cho vị thế đang mở
                 if self.position_open and self.status == "open":
                     self.check_tp_sl()
                 
@@ -348,7 +357,11 @@ class IndicatorBot:
             
             if not positions or len(positions) == 0:
                 self.position_open = False
-                self.status = "waiting"
+                # Chỉ chuyển sang trạng thái chờ nếu trước đó đang mở
+                if self.status == "open":
+                    self.status = "cooldown"
+                    self.last_close_time = time.time()
+                    self.log(f"⏳ {self.symbol} bắt đầu thời gian chờ sau khi đóng lệnh")
                 self.side = ""
                 self.qty = 0
                 self.entry = 0
@@ -366,8 +379,13 @@ class IndicatorBot:
                         self.entry = float(pos['entryPrice'])
                         return
             
+            # Nếu không tìm thấy vị thế
             self.position_open = False
-            self.status = "waiting"
+            # Chỉ chuyển sang trạng thái chờ nếu trước đó đang mở
+            if self.status == "open":
+                self.status = "cooldown"
+                self.last_close_time = time.time()
+                self.log(f"⏳ {self.symbol} bắt đầu thời gian chờ sau khi đóng lệnh")
             self.side = ""
             self.qty = 0
             self.entry = 0
@@ -434,10 +452,12 @@ class IndicatorBot:
         return None
 
     def open_position(self, side):
+        # Luôn kiểm tra lại trạng thái trước khi mở lệnh
         self.check_position_status()
         
-        if self.position_open:
-            self.log(f"⚠️ {self.symbol} đã có vị thế mở, không vào lệnh mới")
+        # Không mở lệnh nếu đang có vị thế hoặc đang trong thời gian chờ
+        if self.position_open or self.status != "waiting":
+            self.log(f"⚠️ {self.symbol} không thể mở lệnh mới - trạng thái hiện tại: {self.status}")
             return
             
         try:
@@ -507,6 +527,7 @@ class IndicatorBot:
 
         except Exception as e:
             self.position_open = False
+            self.status = "waiting"
             self.log(f"❌ Lỗi khi vào lệnh {self.symbol}: {e}")
 
     def close_position(self, reason=""):
@@ -551,14 +572,10 @@ class IndicatorBot:
                 self.close_position("Thử đóng lại")
                 return
                     
-            # Cập nhật trạng thái bot và thời điểm đóng
-            self.status = "waiting"
-            self.side = ""
-            self.qty = 0
-            self.entry = 0
-            self.position_open = False
-            self.last_trade_time = time.time()
-            self.last_close_time = time.time()  # Ghi nhận thời điểm đóng vị thế
+            # Cập nhật trạng thái bot
+            self.status = "cooldown"
+            self.last_close_time = time.time()
+            self.log(f"⏳ {self.symbol} bắt đầu thời gian chờ sau khi đóng lệnh")
             
         except Exception as e:
             self.log(f"❌ Lỗi khi đóng lệnh {self.symbol}: {e}")
@@ -600,22 +617,27 @@ def load_config_from_env():
     manager = BotManager()
     
     # Đọc cấu hình từ biến môi trường
-    symbols = os.getenv("SYMBOLS", "XRPUSDT,DOGEUSDT").split(",")
+    symbols = os.getenv("SYMBOLS", "DOGEUSDT,XRPUSDT").split(",")
     lev = int(os.getenv("LEVERAGE", 50))
     percent = float(os.getenv("PERCENT", 20.0))
-    tp = float(os.getenv("TAKE_PROFIT", 10.0))
+    tp = float(os.getenv("TAKE_PROFIT", 5.0))
     sl = float(os.getenv("STOP_LOSS", 5.0))
     indicator = os.getenv("INDICATOR", "RSI")
+    cooldown = int(os.getenv("COOLDOWN_PERIOD", 30))  # Mặc định 5 phút
     
     for symbol in symbols:
-        manager.add_bot(
+        bot = IndicatorBot(
             symbol=symbol.strip(),
             lev=lev,
             percent=percent,
             tp=tp,
             sl=sl,
-            indicator=indicator
+            indicator=indicator,
+            ws_manager=manager.ws_manager
         )
+        bot.cooldown_period = cooldown  # Áp dụng thời gian chờ từ biến môi trường
+        manager.bots[symbol] = bot
+        logger.info(f"✅ Đã thêm bot cho {symbol} với chỉ báo {indicator}, cooldown: {cooldown}s")
     
     return manager
 
