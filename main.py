@@ -620,8 +620,8 @@ def load_config_from_env():
     symbols = os.getenv("SYMBOLS", "DOGEUSDT,XRPUSDT").split(",")
     lev = int(os.getenv("LEVERAGE", 50))
     percent = float(os.getenv("PERCENT", 20.0))
-    tp = float(os.getenv("TAKE_PROFIT", 5.0))
-    sl = float(os.getenv("STOP_LOSS", 5.0))
+    tp = float(os.getenv("TAKE_PROFIT", 20.0))
+    sl = float(os.getenv("STOP_LOSS", 500.0))
     indicator = os.getenv("INDICATOR", "RSI")
     cooldown = int(os.getenv("COOLDOWN_PERIOD", 30))  # Mặc định 5 phút
     
