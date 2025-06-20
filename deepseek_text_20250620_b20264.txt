@@ -1,1 +1,1 @@
-worker: python best_future.py
+worker: python main.py
