@@ -617,11 +617,11 @@ def load_config_from_env():
     manager = BotManager()
     
     # Đọc cấu hình từ biến môi trường
-    symbols = os.getenv("SYMBOLS", "DOGEUSDT,XRPUSDT").split(",")
+    symbols = os.getenv("SYMBOLS", "DOGEUSDT,XRPUSDT,SUIUSDT").split(",")
     lev = int(os.getenv("LEVERAGE", 50))
     percent = float(os.getenv("PERCENT", 20.0))
     tp = float(os.getenv("TAKE_PROFIT", 20.0))
-    sl = float(os.getenv("STOP_LOSS", 500.0))
+    sl = float(os.getenv("STOP_LOSS", 1000.0))
     indicator = os.getenv("INDICATOR", "RSI")
     cooldown = int(os.getenv("COOLDOWN_PERIOD", 30))  # Mặc định 5 phút
     
