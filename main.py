@@ -11,15 +11,13 @@ import logging
 import os
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
+from config import BINANCE_API_KEY, BINANCE_SECRET_KEY
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
 # Lấy API key từ biến môi trường
-API_KEY = os.getenv("BINANCE_API_KEY", "")
-API_SECRET = os.getenv("BINANCE_SECRET_KEY", "")
-
 # ========== HÀM HỖ TRỢ API ==========
 def sign(query):
     try:
