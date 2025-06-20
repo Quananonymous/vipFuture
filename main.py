@@ -12,14 +12,14 @@ import os
 import math
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-
+from config import BINANCE_API_KEY, BINANCE_SECRET_KEY
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
 # Lấy API key từ biến môi trường
-API_KEY = os.getenv("BINANCE_API_KEY", "")
-API_SECRET = os.getenv("BINANCE_SECRET_KEY", "")
+API_KEY = BINANCE_API_KEY
+API_SECRET = BINANCE_SECRET_KEY
 
 # ========== HÀM HỖ TRỢ API ==========
 def get_server_time():
@@ -580,11 +580,11 @@ def load_config_from_env():
     manager = BotManager()
     
     # Đọc cấu hình từ biến môi trường
-    symbols = os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT").split(",")
+    symbols = os.getenv("SYMBOLS", "DOGEUSDT,XRPUSDT,SUIUSDT,ADAUSDT,1000PEPEUSDT").split(",")
     lev = int(os.getenv("LEVERAGE", 50))
-    percent = float(os.getenv("PERCENT", 5.0))
-    tp = float(os.getenv("TAKE_PROFIT", 10.0))
-    sl = float(os.getenv("STOP_LOSS", 5.0))
+    percent = float(os.getenv("PERCENT", 10.0))
+    tp = float(os.getenv("TAKE_PROFIT", 20.0))
+    sl = float(os.getenv("STOP_LOSS", 50.0))
     indicator = os.getenv("INDICATOR", "RSI")
     
     for symbol in symbols:
