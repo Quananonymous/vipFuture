@@ -13,6 +13,7 @@ import math
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from config import BINANCE_API_KEY, BINANCE_SECRET_KEY
+
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
@@ -274,6 +275,8 @@ class IndicatorBot:
         self.position_check_interval = 60
         self.last_position_check = 0
         self.last_error_log_time = 0
+        self.cooldown_period = 300  # Thời gian chờ sau khi đóng vị thế (5 phút)
+        self.last_close_time = 0  # Thời điểm đóng vị thế gần nhất
         
         self.ws_manager.add_symbol(self.symbol, self._handle_price_update)
         
@@ -303,6 +306,14 @@ class IndicatorBot:
                     self.last_position_check = current_time
                 
                 if not self.position_open and self.status == "waiting":
+                    # Kiểm tra thời gian chờ sau khi đóng vị thế
+                    if current_time - self.last_close_time < self.cooldown_period:
+                        # Vẫn trong thời gian chờ
+                        wait_time = self.cooldown_period - (current_time - self.last_close_time)
+                        self.log(f"⏳ {self.symbol} đang chờ ({int(wait_time)}s) trước khi mở vị thế mới")
+                        time.sleep(5)
+                        continue
+                    
                     signal = self.get_signal()
                     
                     if signal and current_time - self.last_trade_time > 60:
@@ -518,27 +529,36 @@ class IndicatorBot:
                 precision = int(round(-math.log10(step), 0))
                 close_qty = round(close_qty, precision)
                 
-                res = place_order(self.symbol, close_side, close_qty)
-                if res:
-                    price = float(res.get('avgPrice', 0))
-                    self.log(f"Đã đóng lệnh {self.symbol} tại {price:.4f} {reason}")
+                # Kiểm tra nếu số lượng đóng lệnh hợp lệ
+                if close_qty > 0:
+                    res = place_order(self.symbol, close_side, close_qty)
+                    if res:
+                        price = float(res.get('avgPrice', 0))
+                        self.log(f"✅ Đã đóng lệnh {self.symbol} tại {price:.4f} {reason}")
+                        self.log(f"📊 Số lượng đã đóng: {close_qty}")
+                    else:
+                        self.log(f"❌ Lỗi khi đóng lệnh {self.symbol}")
                 else:
-                    self.log(f"Lỗi khi đóng lệnh {self.symbol}")
+                    self.log(f"⚠️ Số lượng đóng lệnh không hợp lệ: {close_qty}")
                     
-            time.sleep(1)
+            # Kiểm tra lại trạng thái vị thế
+            time.sleep(2)  # Chờ Binance cập nhật
             self.check_position_status()
             
+            # Nếu vẫn còn vị thế, thử đóng lại
             if self.position_open:
                 self.log(f"⚠️ Vị thế {self.symbol} chưa đóng, thử đóng lại")
                 self.close_position("Thử đóng lại")
                 return
                     
+            # Cập nhật trạng thái bot và thời điểm đóng
             self.status = "waiting"
             self.side = ""
             self.qty = 0
             self.entry = 0
             self.position_open = False
             self.last_trade_time = time.time()
+            self.last_close_time = time.time()  # Ghi nhận thời điểm đóng vị thế
             
         except Exception as e:
             self.log(f"❌ Lỗi khi đóng lệnh {self.symbol}: {e}")
@@ -580,11 +600,11 @@ def load_config_from_env():
     manager = BotManager()
     
     # Đọc cấu hình từ biến môi trường
-    symbols = os.getenv("SYMBOLS", "DOGEUSDT,XRPUSDT,SUIUSDT,ADAUSDT,1000PEPEUSDT").split(",")
+    symbols = os.getenv("SYMBOLS", "XRPUSDT,DOGEUSDT").split(",")
     lev = int(os.getenv("LEVERAGE", 50))
-    percent = float(os.getenv("PERCENT", 10.0))
-    tp = float(os.getenv("TAKE_PROFIT", 20.0))
-    sl = float(os.getenv("STOP_LOSS", 50.0))
+    percent = float(os.getenv("PERCENT", 20.0))
+    tp = float(os.getenv("TAKE_PROFIT", 10.0))
+    sl = float(os.getenv("STOP_LOSS", 5.0))
     indicator = os.getenv("INDICATOR", "RSI")
     
     for symbol in symbols:
