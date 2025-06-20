@@ -563,14 +563,14 @@ class IndicatorBot:
                     self.log(f"⚠️ Số lượng đóng lệnh không hợp lệ: {close_qty}")
                     
             # Kiểm tra lại trạng thái vị thế
-            time.sleep(2)  # Chờ Binance cập nhật
+            time.sleep(20)  # Chờ Binance cập nhật
             self.check_position_status()
             
             # Nếu vẫn còn vị thế, thử đóng lại
-            if self.position_open:
-                self.log(f"⚠️ Vị thế {self.symbol} chưa đóng, thử đóng lại")
-                self.close_position("Thử đóng lại")
-                return
+            #if self.position_open:
+                #self.log(f"⚠️ Vị thế {self.symbol} chưa đóng, thử đóng lại")
+                #self.close_position("Thử đóng lại")
+                #return
                     
             # Cập nhật trạng thái bot
             self.status = "cooldown"
