@@ -9,18 +9,29 @@ import numpy as np
 import websocket
 import logging
 import os
+import math
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-from config import BINANCE_API_KEY, BINANCE_SECRET_KEY
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
-API_KEY = BINANCE_API_KEY
-API_SECRET = BINANCE_SECRET_KEY
 # Lấy API key từ biến môi trường
+API_KEY = os.getenv("BINANCE_API_KEY", "")
+API_SECRET = os.getenv("BINANCE_SECRET_KEY", "")
+
 # ========== HÀM HỖ TRỢ API ==========
+def get_server_time():
+    try:
+        url = "https://fapi.binance.com/fapi/v1/time"
+        with urllib.request.urlopen(url) as response:
+            data = json.loads(response.read())
+            return data['serverTime']
+    except Exception as e:
+        logger.error(f"Error getting server time: {e}")
+        return int(time.time() * 1000)
+
 def sign(query):
     try:
         return hmac.new(API_SECRET.encode(), query.encode(), hashlib.sha256).hexdigest()
@@ -44,7 +55,7 @@ def get_step_size(symbol):
 
 def set_leverage(symbol, lev):
     try:
-        ts = int(time.time() * 1000)
+        ts = get_server_time()
         params = {
             "symbol": symbol.upper(),
             "leverage": lev,
@@ -64,7 +75,7 @@ def set_leverage(symbol, lev):
 
 def get_balance():
     try:
-        ts = int(time.time() * 1000)
+        ts = get_server_time()
         params = {"timestamp": ts}
         query = urllib.parse.urlencode(params)
         sig = sign(query)
@@ -81,7 +92,7 @@ def get_balance():
 
 def place_order(symbol, side, qty):
     try:
-        ts = int(time.time() * 1000)
+        ts = get_server_time()
         params = {
             "symbol": symbol.upper(),
             "side": side,
@@ -95,13 +106,16 @@ def place_order(symbol, side, qty):
         req = urllib.request.Request(url, headers={'X-MBX-APIKEY': API_KEY}, method='POST')
         with urllib.request.urlopen(req) as response:
             return json.loads(response.read())
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode()
+        logger.error(f"HTTP Error placing order: {e.code} - {error_body}")
     except Exception as e:
         logger.error(f"Error placing order: {e}")
     return None
 
 def cancel_all_orders(symbol):
     try:
-        ts = int(time.time() * 1000)
+        ts = get_server_time()
         params = {"symbol": symbol.upper(), "timestamp": ts}
         query = urllib.parse.urlencode(params)
         sig = sign(query)
@@ -125,7 +139,7 @@ def get_current_price(symbol):
 
 def get_positions(symbol=None):
     try:
-        ts = int(time.time() * 1000)
+        ts = get_server_time()
         params = {"timestamp": ts}
         if symbol:
             params["symbol"] = symbol.upper()
@@ -164,18 +178,6 @@ def calc_rsi(prices, period=14):
     
     rs = avg_gain / avg_loss
     return 100.0 - (100.0 / (1 + rs))
-
-def calc_ema(prices, period=21):
-    if len(prices) < period:
-        return None
-    
-    ema = np.mean(prices[:period])
-    k = 2 / (period + 1)
-    
-    for price in prices[period:]:
-        ema = price * k + ema * (1 - k)
-    
-    return ema
 
 # ========== QUẢN LÝ WEBSOCKET HIỆU QUẢ ==========
 class WebSocketManager:
@@ -269,12 +271,9 @@ class IndicatorBot:
         self._stop = False
         self.position_open = False
         self.last_trade_time = 0
-        self.last_rsi = 50
         self.position_check_interval = 60
         self.last_position_check = 0
         self.last_error_log_time = 0
-        
-        self._last_status = None
         
         self.ws_manager.add_symbol(self.symbol, self._handle_price_update)
         
@@ -380,14 +379,24 @@ class IndicatorBot:
             if current_price <= 0:
                 return
                 
+            # Tính toán lợi nhuận chính xác
             if self.side == "BUY":
                 profit = (current_price - self.entry) * self.qty
-            else:
+            else:  # SELL
                 profit = (self.entry - current_price) * abs(self.qty)
                 
-            invested = self.entry * abs(self.qty) / self.lev
+            # Tính vốn đầu tư (margin used)
+            invested = (self.entry * abs(self.qty)) / self.lev
+            
+            # Kiểm tra chia cho 0
+            if invested <= 0:
+                self.log(f"⚠️ Vốn đầu tư không hợp lệ: {invested}")
+                return
+                
+            # Tính ROI (%)
             roi = (profit / invested) * 100
             
+            # Kiểm tra TP/SL
             if roi >= self.tp:
                 self.close_position(f"✅ Đạt TP {self.tp}% (ROI: {roi:.2f}%)")
             elif roi <= -self.sl:
@@ -443,15 +452,23 @@ class IndicatorBot:
                 step = 0.001
             
             qty = (usdt_amount * self.lev) / price
+            
+            # Làm tròn chính xác theo step size
             if step > 0:
+                # Tính số bước
                 steps = qty / step
-                qty = round(steps) * step
+                # Làm tròn xuống
+                steps = math.floor(steps)
+                qty = steps * step
             
             qty = max(qty, 0)
-            qty = round(qty, 8)
+            
+            # Định dạng theo số lượng số thập phân
+            precision = int(round(-math.log10(step), 0))
+            qty = round(qty, precision)
             
             min_qty = step
-            self.log(f"ℹ️ {self.symbol} - Số lượng: {qty}, Step: {step}")
+            self.log(f"ℹ️ {self.symbol} - Số lượng: {qty}, Step: {step}, Precision: {precision}")
             
             if qty < min_qty:
                 self.log(f"⚠️ Số lượng quá nhỏ ({qty}), không đặt lệnh")
@@ -492,10 +509,14 @@ class IndicatorBot:
                 step = get_step_size(self.symbol)
                 if step > 0:
                     steps = close_qty / step
-                    close_qty = round(steps) * step
+                    steps = math.floor(steps)
+                    close_qty = steps * step
                 
                 close_qty = max(close_qty, 0)
-                close_qty = round(close_qty, 8)
+                
+                # Định dạng theo số lượng số thập phân
+                precision = int(round(-math.log10(step), 0))
+                close_qty = round(close_qty, precision)
                 
                 res = place_order(self.symbol, close_side, close_qty)
                 if res:
@@ -559,11 +580,11 @@ def load_config_from_env():
     manager = BotManager()
     
     # Đọc cấu hình từ biến môi trường
-    symbols = os.getenv("SYMBOLS", "XRPUSDT,DOGEUSDT,1000PEPEUSDT,SUIUSDT,ADAUSDT").split(",")
+    symbols = os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT").split(",")
     lev = int(os.getenv("LEVERAGE", 50))
-    percent = float(os.getenv("PERCENT", 10))
-    tp = float(os.getenv("TAKE_PROFIT", 20.0))
-    sl = float(os.getenv("STOP_LOSS", 1000.0))
+    percent = float(os.getenv("PERCENT", 5.0))
+    tp = float(os.getenv("TAKE_PROFIT", 10.0))
+    sl = float(os.getenv("STOP_LOSS", 5.0))
     indicator = os.getenv("INDICATOR", "RSI")
     
     for symbol in symbols:
